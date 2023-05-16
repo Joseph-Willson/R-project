@@ -1,0 +1,306 @@
+---
+title: "The crude oil market and the role of speculative trading"
+author: |
+  ABDERRAHMANE Clement, ETTALI Achraf, Japel Clement,<br>
+  TRAN Francis, WILSON Joseph
+date: "`r Sys.Date()`"
+lang: "fr"
+fontsize: 12pt
+geometry: a4paper,top=2cm,bottom=2cm,left=1.5cm,right=1.5cm
+output: 
+  pdf_document:
+    df_print: kable
+    number_sections: yes
+    highlight: tango
+    latex_engine: pdflatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, message = FALSE, warning =F,fig.align = 'center')
+```
+
+```{r,include=FALSE}
+#Question 1
+pack2<-c("lmtest", "fGarch", "vars", "FinTS", "moments", "rugarch", "sandwich", "rmgarch",
+         "urca", "xts") 
+#install.packages(pack2)
+lapply(pack2, require, character.only = TRUE) 
+library(urca)
+library(car)
+library(dplyr)
+library(MASS)
+library(GGally)
+library(tseries)
+library(vars)
+library(rugarch)
+library(rmgarch)
+library(ggcorrplot)
+library(caret)
+library(corpcor)
+library(strucchange)
+library(ppcor)
+library(readxl)
+library(ggplot2)
+library(tseries)
+library(lmtest)
+library(rugarch)
+library(tidyverse)
+library(sandwich)
+library(PerformanceAnalytics)
+library(corrr)
+library(corrplot)
+library(xts)
+library(forecast)
+library(kableExtra)
+library(knitr)
+```
+
+
+```{r mise en forme des tableaux, echo=FALSE}
+kable_1 <- function(tab, transp = FALSE, digits = 2, titre=NULL, font_size = NULL, ...){
+      if(transp){
+        tab %>% t() %>% kable(caption=titre, digits = digits,...) %>%
+          kable_styling(full_width = F, position = "center",
+                        bootstrap_options = c("striped", "condensed"))  
+      } else {
+        tab %>% kable(caption=titre, digits = digits, ...) %>%
+          kable_styling(full_width = F, position = "center",
+                        bootstrap_options = c("striped", "condensed"))
+      }
+    }
+```
+
+\newpage
+# Introduction
+
+The goal of this project is to analyze the crude oil market based on different factors. We know that supply and demand can impact the oil price as it was already demonstrated in the literature. (Kilian, 2009a, Lippi and Nobili, 2012). However, speculative trading also has an important impact on the crude oil market.  (Juvenal and Petrella, 2015, Knittel and Pindyck, 2016, Li et al., 2022, Zhao et al., 2022). We will present to you the methods we’ve implemented and discuss the results obtained. To do so, we’ve been working with the following dataset from 01/1990 to 01/2023 and which contained several columns such as the level of crude oil inventories for US or The real price of crude oil.
+
+# Question 1
+```{r}
+#Question 1
+#Load Dataset
+pack<-c("readxl")
+data<- read_excel("D:\\Cours\\Msc FBD Neoma\\Data Science\\Data2023.xlsx",
+                     col_names = TRUE)
+
+#Data Cleaning : conversion into Data Format, creation of new variables, calculations of log returns
+data$Date <- as.Date(data$Date)
+oil_price <- data[["Imported Crude Oil REAL Price ($/barrel)"]]
+economic_activity <- data[["Index of Global Real Economic Activity (Kilian, AER 2009)"]]
+global_oil_production <- data[["Global oil production (mbpd)"]]
+us_crude_inventory <- data[["U.S. crude oil inventories (Thousand Barrels)"]]
+first_forward <- data[["NYMEX WTI 1st forward month"]]
+six_forward <- data[["NYMEX WTY 6th forward month"]]
+twelve_forward <- data[["NYMEX 12th forward month"]]
+
+#compute the return 
+oil_pricereturn <- diff(oil_price,lag=1)
+economic_activityreturn <- diff(economic_activity,lag=1)
+global_oil_productionreturn <- diff(global_oil_production,lag=1)
+us_crude_inventoryreturn <- diff(us_crude_inventory,lag=1)
+first_forwardreturn <- diff(first_forward,lag=1)
+six_forwardreturn <- diff(six_forward,lag=1)
+twelve_forwardreturn <- diff(twelve_forward,lag=1)
+
+#compute the log of our time series
+logoil_price = log (oil_price)
+logeconomic_activity = log (economic_activity)
+logglobal_oil_production = log (global_oil_production)
+logus_crude_inventory = log (us_crude_inventory)
+logfirst_forward = log (first_forward)
+logsix_forward = log (six_forward)
+logtwelve_forward = log (twelve_forward)
+
+#compute the log return
+logoil_price_return <-diff(logoil_price, lag=1)
+logeconomic_activity_return <- diff(logeconomic_activity, lag=1)
+logglobal_oil_production_return <- diff(logglobal_oil_production, lag=1)
+logus_crude_inventory_return <- diff(logus_crude_inventory, lag=1)
+logfirst_forward_return <- diff(logfirst_forward, lag=1)
+logsix_forward_return <- diff(logsix_forward, lag=1)
+logtwelve_forward_return <- diff(logtwelve_forward, lag=1)
+```
+
+```{r}
+#Correlation Matrix 
+m_corr <- cor(data[, -1], use = "pairwise.complete.obs")
+corrplot(m_corr, type ="upper",tl.cex = 0.5)
+```
+First of all we’ve computed the correlation matrix to have a first glimpse. We are focused on the “Imported Crude Oil REAL Price ($/barrel)” and we can see that it is highly correlated with  the  NYMEX WTI 1st forward month , NYMEX WTY 6th forward month , NYMEX 12th forward month but not that much with the Index of Global Real Economic Activity (Kilian, AER 2009). 
+\newpage
+```{r}
+#Implementation of the linear model
+model <- lm(logoil_price_return ~ economic_activityreturn + global_oil_productionreturn +
+              us_crude_inventoryreturn + logfirst_forward_return +
+              logsix_forward_return + logtwelve_forward_return, data = data)
+# Print the summary of the model
+summary(model)
+```
+Then we’ve implemented a linear model with logoil_price_return as the dependent variable, and economic_activityreturn, global_oil_productionreturn, us_crude_inventoryreturn, logfirst_forward_return, logsix_forward_return, and logtwelve_forward_return as the independent variables. We’ve calculated all the returns and log returns and the Index of Global Real Economic Activity column is the only one for which we kept the return and not the log return. 
+The multiple linear regression model analyzes the impact of independent variables on the dependent variable. The model gives us estimates of the regression coefficients for each of the independent variables, which is the impact of each independent variable on the dependent variable. Results of the model demonstrated that economic variables like global oil production (global_oil_productionreturn) have a positive impact on the price of oil, and that  the change in U.S. crude inventories (us_crude_inventoryreturn) doesn’t have a significant impact on the price of oil. Also, changes in future oil prices at different horizons (logfirst_forward_return, logsix_forward_return) have a significant and positive impact on the current oil price. The goodness of fit of the model is linked to the residual statistics, which is the differences between the observed values and the predicted values of the model. Results indicate that the model fits the data fairly well, with a standard error residual of 0.0294, which means that the model predictions are on average within 3 cents of the actual oil price. Finally,  the multiple R-squared of 0.9036 indicates that independent variables explain at  90.36% the variation in the price of oil which is a good indication that our model can accurately predict  future variations in oil prices.
+The estimated coefficient shows the contribution of each explanatory variable to the dependent variable. For example, the estimated coefficient for "logfirst_forward_return" is 0.7517, and it means that a one-unit increase in "logfirst_forward_return" is associated with a 0.7517-unit increase in the dependent variable.  The variable "economic_activityreturn" has a t-value of 2.89 and a p-value of 0.004, which means that this variable has a significant effect on the dependent variable. The variable "logfirst_forward_return" has a t-value of 18.38 and a very low p-value of 9.53e-55, which means that this variable has a very significant effect on the dependent variable. The variable "logsix_forward_return" has a t-value of 2.69 and a p-value of 0.007, which means that this variable has a significant effect on the dependent variable. The other variables do not have a high t-value and/or have a high p-value, and it means that they are not significant in explaining the dependent variable.
+
+```{r}
+# Check for multicollinearity
+
+# Perform White's test for heteroscedasticity
+white_test <- bptest(model)
+white_test
+
+# Perform Durbin-Watson test for autocorrelation
+dw_test <- dwtest(model)
+dw_test
+
+#jacque berra test 
+jb_test <- jarque.test(model$residuals)
+jb_test
+```
+We’ve computed several tests and here are the results obtained : 
+Breusch-Pagan test: This heteroscedasticity test , evaluates whether the variance of our residuals is constant or not based on the explanatory variables. The BP statistic is equal to 18.493, meaning that the null hypothesis (no heteroskedasticity) is rejected at the 0.05 level of significance. 
+Durbin-Watson test: This autocorrelation test checks whether the residuals are correlated with each other. The DW statistic is 2.1875, meaning that there is no autocorrelation of the residuals because it is close to 2. The p-value is greater than 0.05, which validates this conclusion.
+Jarque-Bera normality test: This test checks if the residuals follow or not a normal distribution. The JB statistic of 418.95 with a p-value less than 0.05, meaning that the null hypothesis (residuals follow a normal distribution) is rejected. 
+
+\newpage
+```{r}
+#VAR model
+vardata <- data.frame (oil_pricereturn  ,global_oil_productionreturn ,
+                         us_crude_inventoryreturn ,logfirst_forward_return ,
+                         logsix_forward_return , logtwelve_forward_return )
+
+var_model <- VAR(vardata, p = 2)
+summary(var_model)
+```
+
+```{r}
+#find number of optimal lags
+AIC_values <- c()
+
+# Estimate the VAR model for different values of p 
+for (p in 1:5) {
+  var_model <- VAR(vardata, p = p)
+  AIC_values[p] <- AIC(var_model)
+}
+
+# Plot the AIC values against the number of lags
+plot(1:5, AIC_values, type = "b", xlab = "Number of lags", ylab = "AIC")
+
+# Find the optimal number of lags based on the minimum AIC value
+optimal_lags <- which.min(AIC_values)
+cat("The optimal number of lags is", optimal_lags)
+```
+
+\newpage
+
+We applied a VAR (Vector Autoregression) model with the same variables that on our LM model. Results show the estimated coefficients for eachexplanatory variable and for the two lags. Results also show the p-value for each coefficient. Positive or negative coefficients show the direction and strength of our relationship between explanatory variables and the dependent variable . We can see that the variation in economic activity (economic_activityreturn) has a significant impact on the variation in oil prices for the first lag period.Then, the variation of world oil production (logglobal_oil_production_return) has a significant impact on the variation of oil prices for the first lag period. On the other hand, the change in U.S. crude inventory (logus_crude_inventory_return) has no significant impact on the change in oil prices.
+
+We obtained a reasonable adjusted R² of about 0.276 meaning that the explanatory variables can explain about 28% of the variation in the change in oil prices. Our F-test is also significant, meaning that our model is useful in explaining the variation in oil prices.
+
+In our case, the covariance matrix shows that the variance of the residuals for logoil_price_return is 0.006558. The off-diagonal values proved that there is a positive covariance between the residuals of economic_activityreturn and logoil_price_return, and that there is a negative covariance between the residuals of logglobal_oil_production_return and logoil_price_return. Covariance between the residuals of the other variables and logoil_price_return is close to zero.
+For the correlation matrix of residuals, for example, the correlation coefficient between the residuals of logoil_price_return and economic_activityreturn is 0.09876, which means that there is a weak positive correlation between these two variable residuals. Also, the correlation coefficient between the residuals of logoil_price_return and logglobal_oil_production_return is equal to -0.20495, which means that there is a weak negative correlation between these two variables' residuals.
+
+We’ve seen that the determinants of crude oil price fluctuations were the variables Index of Global Real Economic Activity (Kilian, AER 2009), NYMEX WTI 1st forward month, NYMEX WTY 6th forward month as they were significant in our model.
+
+\newpage
+
+```{r}
+#Question 2
+
+#impact_vars <- c("logglobal_oil_production_return","logus_crude_inventory_return","logfirst_forward_return","logsix_forward_return","logtwelve_forward_return")
+
+# Loop through the variables and plot the impulse response for each one
+#for (i in impact_vars) {
+  #irf_model <- irf(var_model, impulse = i, response = "logoil_price_return", boot = FALSE)
+  #plot(irf_model, main = paste("Impulse response of", i, "on logoil_price_return"))
+#}
+```
+# Question 2
+
+![Texte alternatif de l'image](1.png){width="50%"}
+\smallbreak
+
+![Texte alternatif de l'image](6.png){width="50%"}
+\smallbreak
+![Texte alternatif de l'image](activity.png){width="50%"}
+
+To analyze how shocks of these determinants affect the crude oil price, we’ve computed the impulse response of the 3 variables and here are our results obtained. 
+
+For the impulse response of logglobal_oil_production_return on logoilprice_return, the for first 3 periods, a shock on the global oil production will lead to a decrease of -0.008 but then for the next 3 period the shock will lead to an increase of the oil price going from -0.008 to 0.002. Then for the last periods, there is a slow decreasing trend.
+
+For the impulse response of logfirst_forward_return on logoilprice_return, the observations are similar to the previous impulse response. A shock on the  on logoilprice_return  NYMEX WTI 1st forward month will first lead to a negative variation on the price going to 0.012, then the variation will go up until 0.002 and finally we observe a slow decreasing trend. 
+
+For the impulse response of logsix_forward_return on logoilprice_return, for the first 3 period a shock on the NYMEX WTY 6th forward month will lead to a increasing trend to 0.013 on our oil price and then until the 7 period, we will observe a decreasing trend on our price. Finally for the final period the stock will lead to a slow increasing trend. 
+By computing the impulse responses, we’ve been able to analyze how a shock on these 3 determinants will impact positively or negatively the oil price.
+
+\newpage
+
+# Question 3
+
+To evaluate the extent to which the role of these determinants changes over time, we’ve implemented our VAR model with a rolling window spaced of 60 months to check if the 3 determinants are still significant or not over time. We obtained  397 iterations so we’ve decided to pick some random element of our lists on which we stored our results which will be a sample of our rolling window results. Let’s summarize the results of the following table : 
+
+\smallbreak
+![Texte alternatif de l'image](tab 1.png){width="50%"}
+![Texte alternatif de l'image](tab 2.png){width="50%"}
+\smallbreak
+We can see that the results remain the same for the first 4 rolling windows that we picked randomly.  The Index of Global Real Economic Activity (Kilian, AER 2009) is significant for the first lag and its coefficient is positive. The NYMEX WTI 1st forward month is significant for both lags with negative coefficient for both lags. The NYMEX WTY 6th forward is significant for the first lag with a positive coefficient for the first lag. However, for the last rolling window picked, we can see that The NYMEX WTI 1st forward month and The NYMEX WTI 6st forward month became Non significant for both lags. It means that over time these determinants can become non significant or not depending on the lags. However, it’s possible that with a more important sample, we could have more easily identify the variation of the coefficient and the significance of the variables.
+
+```{r}
+#Question 3
+#rolling window
+window_length <- 60
+
+# Create an empty list to store the VAR models
+
+results <- list()
+# Loop over the data using a rolling window
+for (i in window_length:nrow(data)) {
+  
+  # Subset the data to the current window
+  window_data <- data[(i - window_length + 1):i, ]
+  # Estimate a VAR model on the current window
+
+  window_model <- VAR(vardata, p = 2)
+  
+  oil_pricereturnestimates <- coef(window_model)$oil_pricereturn
+  # Store the model for the current window
+  results[[i-window_length+1]] <- list(window_data = window_data, model_summary = summary(window_model), oil_pricereturnestimates = oil_pricereturnestimates)
+  
+}
+```
+
+\newpage
+# Question 4
+```{r}
+#question 4
+# Create a time series plot of the real price of crude oil
+ggplot(data, aes(x = Date, y = `Imported Crude Oil REAL Price ($/barrel)`)) +
+  geom_line() +
+  labs(title = "Real Price of Crude Oil Over Time",
+       x = "Year",
+       y = "Real Price ($/barrel)")
+```
+
+```{r}
+# Calculate annual percentage change in real price of crude oil
+df_pct_change <- data %>%
+  mutate(year = lubridate::year(Date)) %>%
+  group_by(year) %>%
+  summarize(pct_change = 100 * (last(`Imported Crude Oil REAL Price ($/barrel)`) / first(`Imported Crude Oil REAL Price ($/barrel)`) - 1))
+
+# Plot annual percentage change in real price of crude oil
+ggplot(df_pct_change, aes(x=year, y=pct_change)) + 
+  geom_line() + 
+  labs(title="Annual Percentage Change in Real Price of Crude Oil", 
+       x="Year", y="% Change") + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+\newpage
+We’ve plotted the real price of crude oil. We can see 3 important shock periods which are the years 2000,  2008 and 2020. For the shock of 2000, it was caused by the Gulf War of 1990/01 which was driven by a shift in speculative demand. Byt Hamilton(2009a) considered that after the invasion of Kuwait the oil inventories didn’t change that much so this result is puzzling for him. He considered that the variation is linked to a flow supply shock. 
+For the next period of 2008, it was caused by  the crash of Wall Street which had a significant impact on the oil price shocks. It led to a huge economic downturn, and many investors were forced to sell off their assets, such as  oil  to cover their losses or margin calls. Because of that, the demand for oil decreased, leading to a sharp decline in oil prices. Also it led to a decrease in economic activity globally, which decreased the demand for oil. 
+To finish with , this Global Financial Crisis impacted the commodity markets, including the oil market. regulatory changes a lot so it increased margin requirements and the  limits on speculative trading. 
+
+For the last shock  of 2020, we know that The COVID-19 pandemic had a huge impact on the global oil market and prices. It led to worldwide lockdowns, leading to a significant drop in demand for oil. It causes a surplus of supply, which decreases oil prices. Also, the breakdown of the Organization of the Petroleum Exporting Countries agreement in March 2020, which limited oil production, caused a war between Saudi Arabia and Russia and as a result, the price of oil fell to historic lows in April 2020. On the graph with the annual percentage change, the shocks of these 3 different periods are more visible. 
+
+# Conclusion 
+
+To conclude, we’ve implemented a method based on the different references. With the LM and VAR model we’ve been able to first analyze which variables were the most determinant for our oil price prediction. Then by checking the impulse response, we’ve analyzed how our oil price will be impacted by a shock of the determinants. On a third time,we’ve used a rolling window like mentioned on the (Extreme risk spillover between crude oil price and financial factors, Zhao, Zhao, W.-L., Fan, Y., and Ji, Q. (2022)) to see how these determinants changed over the time. Finally, we’ve seen that historical and geopolitical events such as Covid-19 can hugely impact the oil price.
